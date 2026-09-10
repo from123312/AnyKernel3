@@ -131,6 +131,26 @@ fi
 
 patch -p1 < "$SUSFS_PATCH" || true
 
+# 兜底：上游 gki-android12-5.10 分支（2026-09-10 起的主补丁）在 fs/statfs.c 的
+# susfs_statfs_by_dentry() 内调用 susfs_sus_kstat_spoof_vfs_statfs() /
+# susfs_is_inode_sus_kstat()，但 susfs_def.h 与 susfs.h 均未提供前向声明，
+# 补丁自身的 extern 声明又位于调用点之后（vfs_statfs 上方），
+# -Werror 下必然 implicit declaration。这里在 include 区之后注入声明，
+# 与后文 extern 签名一致，重复声明合法；上游修复后本段自动跳过。
+STATFS_C="./fs/statfs.c"
+if [ -f "$STATFS_C" ] \
+  && grep -q 'susfs_sus_kstat_spoof_vfs_statfs' "$STATFS_C" \
+  && ! grep -q 'susfs statfs forward decls (workflow fix)' "$STATFS_C"; then
+  sed -i '/^#include "internal.h"$/a\
+\
+/* susfs statfs forward decls (workflow fix): upstream susfs_def.h misses these */\
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT\
+extern bool susfs_is_inode_sus_kstat(struct inode *inode, bool *out_is_fuse);\
+extern int susfs_sus_kstat_spoof_vfs_statfs(struct inode *inode, struct kstatfs *buf, bool *is_fuse);\
+#endif' "$STATFS_C"
+  echo "已为 fs/statfs.c 注入 SUSFS statfs 前向声明（上游 gki-android12-5.10 声明缺失兜底）"
+fi
+
 # 主补丁应用后还原临时上下文，避免无关源码差异保留到最终产物
 if [[ "${ANDROID_VERSION}" == "android12" && "${KERNEL_VERSION}" == "5.10" ]]; then
   if [[ "$CURRENT_SUB" -le 43 ]]; then
