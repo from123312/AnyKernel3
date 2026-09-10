@@ -766,6 +766,17 @@ jobs:
           rm -f lib/lz4/lz4_compress.c lib/lz4/lz4_decompress.c lib/lz4/lz4defs.h lib/lz4/lz4hc_compress.c
 
           cp -r $ZZH_PATCHES/zram/lz4/* ./lib/lz4/
+          # 修复：zram/lz4/ 中的新版 Makefile 以 Makefile.txt 名义入库，Kbuild 只认 lib/lz4/Makefile。
+          # 若不改名，原生 Makefile 会继续要求已被上面 rm 删除的 lz4_compress.o 等目标，
+          # 触发 "No rule to make target 'lib/lz4/lz4_compress.o', needed by 'lib/lz4/built-in.a'"
+          # 导致 5.10/5.15/6.1/6.6 全版本编译失败。
+          if [ -f lib/lz4/Makefile.txt ]; then
+            mv -f lib/lz4/Makefile.txt lib/lz4/Makefile
+            echo "已将 lib/lz4/Makefile.txt 替换为 lib/lz4/Makefile"
+          elif [ ! -f lib/lz4/Makefile ]; then
+            echo "::error::lib/lz4/Makefile 缺失且未找到 Makefile.txt，无法替换原生 LZ4 Makefile"
+            exit 1
+          fi
           cp -r $ZZH_PATCHES/zram/include/linux/* ./include/linux/
           bash $ZZH_PATCHES/zram/apply_lz4_neon.sh
 
