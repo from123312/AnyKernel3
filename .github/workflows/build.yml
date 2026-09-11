@@ -484,6 +484,26 @@ jobs:
             echo "KSU_LATEST_COMMIT_DATE=未知" >> $GITHUB_ENV
           fi
 
+      # KSU-Next dev-susfs 自 2026-09-10 起在 Kbuild 顶部加入 $(error) guard：
+      # 要求 CONFIG_KPROBES=y 或 CONFIG_KSU_SUSFS=y。5.10/5.15 的 build.sh 在
+      # defconfig 生成之前先执行 make mrproper，此时 .config 尚不存在、两个变量
+      # 皆空，guard 在 clean 阶段直接 Stop，构建挂死。正常编译时两个配置必然
+      # 满足其一，移除 guard 不影响任何功能；无此 guard 的变体自动跳过。
+      - name: 移除 KSU Kbuild 的 clean 阶段 guard（5.10/5.15 mrproper 触发）
+        working-directory: ${{ env.KERNEL_ROOT }}
+        run: |
+          KBUILD="common/drivers/kernelsu/Kbuild"
+          if [ -f "$KBUILD" ] && grep -q 'KernelSU requires either CONFIG_KPROBES' "$KBUILD"; then
+            sed -i 's|^$(error "KernelSU requires either CONFIG_KPROBES=y or CONFIG_KSU_SUSFS=y")$|# KSU Kbuild clean-guard disabled by workflow (breaks make mrproper before defconfig)|' "$KBUILD"
+            if grep -q 'KernelSU requires either CONFIG_KPROBES' "$KBUILD"; then
+              echo "::error::KSU Kbuild clean 阶段 guard 移除失败"
+              exit 1
+            fi
+            echo "已移除 $KBUILD 中的 clean 阶段 guard（正常编译不受影响）"
+          else
+            echo "KSU Kbuild 无 clean 阶段 guard，跳过"
+          fi
+
       # Next 变体（pershoot dev-susfs）在 zygote 派生管理器/已授权应用时会
       # 关闭其 Seccomp，这里移除相关调用，使其保持过滤模式。
       - name: 保留管理器 Seccomp 过滤（Next 变体）
